@@ -9528,6 +9528,7 @@ async function pgAdmin(app) {
     ['matches', 'Матчи'],
     ['draw', '🎲 Жеребьёвка'],
     ['referees', 'Судьи'],
+    ['commentators', '🎙️ Комментаторы'],
     ['coaches', 'Тренеры и штаб'],
     ['tournaments', 'Турниры'],
     ['clubs', 'Клубы и логотипы'],
@@ -11367,6 +11368,289 @@ async function pgAdmin(app) {
     };
 
     ab.querySelectorAll('[data-rfp]').forEach(b => b.onclick = () => openRefereeModal(b.dataset.rfp));
+  }
+  else if (AT === 'commentators') {
+    const [cData, fxAll] = await Promise.all([
+      api('/commentators'),
+      api('/fixtures').catch(() => [])
+    ]);
+    if (AT !== 'commentators' || !document.contains(ab)) return;
+    const list = Array.isArray(cData?.commentators) ? cData.commentators : [];
+    const curSeason = S.st?.season || S.st?.settings?.season;
+    const seasonFixtures = (Array.isArray(fxAll) ? fxAll : []).filter(x => !curSeason || !x.season || x.season === curSeason);
+
+    const leadMatchesById = {};
+    const coMatchesById = {};
+    for (const c of list) {
+      leadMatchesById[c.id] = [];
+      coMatchesById[c.id] = [];
+    }
+    for (const f of seasonFixtures) {
+      const b = f.commentator;
+      if (!b) continue;
+      if (b.id && leadMatchesById[b.id]) leadMatchesById[b.id].push(f);
+      if (b.coId && coMatchesById[b.coId]) coMatchesById[b.coId].push(f);
+    }
+
+    window._commTierFilter = window._commTierFilter || 'all';
+    window._commSearch = window._commSearch || '';
+
+    const tierFilters = [
+      { id: 'all', label: `Все (${list.length})` },
+      { id: 'top', label: `Верхний ярус (${list.filter(c => c.tier === 'top').length})` },
+      { id: 'grid', label: `Вся сетка тура (${list.filter(c => c.tier === 'grid').length})` },
+      { id: 'lower', label: `Середина и низ (${list.filter(c => c.tier === 'lower').length})` },
+      { id: 'second', label: `Вторые голоса (${list.filter(c => c.canCo && (c.tier === 'second' || c.tier === 'grid')).length})` },
+      { id: 'caucasus', label: `Северный Кавказ (${list.filter(c => c.tier === 'caucasus').length})` }
+    ];
+
+    const roleCapabilityText = (c) => {
+      if (c.canLead && c.canCo) return 'Основной + второй голос в кабине';
+      if (c.canCo && !c.canLead) return 'Второй голос (полноценный напарник в кабине)';
+      return 'Основной комментатор';
+    };
+
+    const byId = Object.fromEntries(list.map(c => [c.id, c]));
+
+    ab.innerHTML = `
+      <div class="panel">
+        <div class="row sp" style="margin-bottom:8px;flex-wrap:wrap;gap:8px">
+          <h3 style="margin:0">🎙️ Комментаторский пул и эфирные кабины (${list.length})</h3>
+          <span class="tag" style="background:#ede9fe;color:#5b21b6;border-color:#c4b5fd;font-weight:700">Живая трансляция · ИИ-стиль</span>
+        </div>
+        <p class="small muted" style="margin:0 0 10px;line-height:1.5">
+          Каждый комментатор обладает собственной манерой речи, акцентами, темпом и набором фактов. Матчи автоматически распределяются по статусу вывески и положению команд в таблице, а на любой матч можно вручную задать ведущего и второго голоса.
+        </p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-bottom:12px">
+          <div style="padding:8px 10px;border-radius:8px;background:#fef2f2;border:1px solid #fecaca;font-size:12.5px">
+            <b style="color:#991b1b">🔥 Главные вывески (верхний ярус)</b>
+            <div class="muted" style="margin-top:2px">Нагучев, Трушечкин, Генич, Шнякин (ключевая четвёрка) и Черданцев — дерби, лидеры таблицы, финалы и центральные матчи тура.</div>
+          </div>
+          <div style="padding:8px 10px;border-radius:8px;background:#eff6ff;border:1px solid #bfdbfe;font-size:12.5px">
+            <b style="color:#1e40af">📺 Вся сетка тура</b>
+            <div class="muted" style="margin-top:2px">Моссаковский, Аксёнов, Неценко, Жичкин, а также Минин, Журавель, Меламед, Дурасов, Логинов и Кларк — базовая обойма матчей чемпионата и Кубка.</div>
+          </div>
+          <div style="padding:8px 10px;border-radius:8px;background:#f8fafc;border:1px solid #cbd5e1;font-size:12.5px">
+            <b style="color:#334155">⚖️ Середина и низ таблицы</b>
+            <div class="muted" style="margin-top:2px">Пирожков и Шмельков чаще получают упорные игры середины и нижней части таблицы, а также матчи низших лиг.</div>
+          </div>
+          <div style="padding:8px 10px;border-radius:8px;background:#f0fdf4;border:1px solid #bbf7d0;font-size:12.5px">
+            <b style="color:#166534">🤝 Вторые голоса и Северный Кавказ</b>
+            <div class="muted" style="margin-top:2px">Крестинин, Коптев, Денисов, Родников, Дурасов, Меламед и Журавель — напарники в кабине. Ибрагимов и Ахмадов подключаются на «Ахмат» и махачкалинское «Динамо».</div>
+          </div>
+        </div>
+        <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px" id="comm_tier_bar">
+          ${tierFilters.map(f => `<button type="button" class="btn sm ${window._commTierFilter === f.id ? '' : 'alt'}" data-ctier="${f.id}">${e(f.label)}</button>`).join('')}
+          <input id="comm_search_inp" value="${e(window._commSearch)}" placeholder="Поиск по имени, стилю или тегу…" style="flex:1;min-width:210px">
+        </div>
+      </div>
+
+      <div id="comm_cards_wrap"></div>
+
+      <div class="panel" style="margin-top:14px">
+        <h3 style="margin:0 0 6px">🎙️ Ручное назначение комментаторов на отдельный матч</h3>
+        <p class="muted small" style="margin:0 0 10px">Выберите любой матч сезона, чтобы посмотреть текущую эфирную кабину или изменить основного комментатора и второго голоса.</p>
+        <div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <select id="cm_match_comp" style="width:auto">
+            <option value="rpl">РПЛ</option>
+            <option value="cup">FONBET Кубок России</option>
+            <option value="fnl">Первая лига (ФНЛ)</option>
+            <option value="supercup">Суперкубок России</option>
+            <option value="all">Все турниры</option>
+          </select>
+          <select id="cm_match_sel" style="flex:1;min-width:280px"></select>
+          <button class="btn" id="cm_match_edit_btn" type="button">🎙️ Изменить комментаторов</button>
+        </div>
+        <div id="cm_match_preview" class="small muted"></div>
+      </div>`;
+
+    const cardsWrap = $('#comm_cards_wrap');
+    const openCommMatchesModal = (c) => {
+      const asLead = leadMatchesById[c.id] || [];
+      const asCo = coMatchesById[c.id] || [];
+      const allAssigned = [
+        ...asLead.map(fx => ({ fx, role: 'Основной комментатор' })),
+        ...asCo.map(fx => ({ fx, role: 'Второй голос (напарник)' }))
+      ].sort((a, b) => String(a.fx.date || '').localeCompare(String(b.fx.date || '')) || (Number(a.fx.round || 0) - Number(b.fx.round || 0)));
+
+      modal(`
+        <div style="max-width:760px;width:100%">
+          <div class="row sp" style="border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:10px;gap:8px">
+            <div>
+              <div class="small muted" style="font-weight:700;text-transform:uppercase">${e(c.tierLabel || c.badge)}</div>
+              <h3 style="margin:2px 0 0">🎙️ ${e(c.name)} — назначения в сезоне (${allAssigned.length})</h3>
+            </div>
+            <button type="button" class="btn alt sm" id="cm_m_close">✕ Закрыть</button>
+          </div>
+          <div class="small" style="margin-bottom:10px;padding:8px 10px;background:var(--soft);border-radius:8px;border:1px solid var(--line)">
+            <b>Роль:</b> ${e(roleCapabilityText(c))} · <b>Главных эфиров:</b> ${asLead.length} · <b>Вторым голосом:</b> ${asCo.length}
+          </div>
+          <div style="max-height:420px;overflow:auto;display:grid;gap:6px">
+            ${allAssigned.length ? allAssigned.map(({ fx, role }) => {
+              const sc = fx.status === 'done' ? `<b>${fx.hg}:${fx.ag}</b>` : (fx.status === 'live' ? '<span class="tag" style="background:#fee2e2;color:#b91c1c">LIVE</span>' : '<span class="muted">Запланирован</span>');
+              return `<div class="row sp" style="padding:7px 10px;border:1px solid var(--line);border-radius:8px;gap:8px;flex-wrap:wrap">
+                <div style="min-width:220px;flex:1">
+                  <div class="small muted">${e(fmtD(fx.date || ''))} · ${e(fx.label || compName(fx.comp))}</div>
+                  <div><a href="#/match/${e(fx.id)}" style="font-weight:700;color:var(--deep)" data-close-modal>${e(fx.homeName || teamName(fx.home))} — ${e(fx.awayName || teamName(fx.away))}</a> ${sc}</div>
+                  <div class="small muted">${e(role)} · Кабина: <b>${e(fx.commentator?.label || '')}</b></div>
+                </div>
+                <button type="button" class="btn alt sm" data-cm-fx="${e(fx.id)}">✏️ Изменить</button>
+              </div>`;
+            }).join('') : '<div class="empty">Назначенных матчей в этом сезоне пока нет.</div>'}
+          </div>
+        </div>`, mEl => {
+        mEl.querySelector('#cm_m_close').onclick = () => mEl.remove();
+        mEl.querySelectorAll('[data-close-modal]').forEach(a => a.onclick = () => mEl.remove());
+        mEl.querySelectorAll('[data-cm-fx]').forEach(btn => btn.onclick = () => {
+          const targetFx = seasonFixtures.find(x => x.id === btn.dataset.cmFx);
+          if (!targetFx) return;
+          mEl.remove();
+          window.openMatchCommentatorModal(targetFx, () => re());
+        });
+      });
+    };
+
+    const renderCommentatorCards = () => {
+      const fTier = window._commTierFilter || 'all';
+      const q = (window._commSearch || '').trim().toLowerCase();
+      const filtered = list.filter(c => {
+        if (fTier === 'second') {
+          if (!(c.canCo && (c.tier === 'second' || c.tier === 'grid'))) return false;
+        } else if (fTier !== 'all') {
+          if (c.tier !== fTier) return false;
+        }
+        if (q) {
+          const hay = [c.name, c.roleTitle, c.badge, c.tierLabel, c.styleSummary, c.speechRules, c.soloSample, ...(c.signatureTags || [])].join(' ').toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        return true;
+      });
+
+      if (!filtered.length) {
+        cardsWrap.innerHTML = '<div class="panel"><div class="empty">По выбранному фильтру комментаторы не найдены.</div></div>';
+        return;
+      }
+
+      cardsWrap.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px">
+        ${filtered.map(c => {
+          const leadList = leadMatchesById[c.id] || [];
+          const coList = coMatchesById[c.id] || [];
+          const doneCount = leadList.filter(x => x.status === 'done').length + coList.filter(x => x.status === 'done').length;
+          const prefCo = c.preferredCoId ? byId[c.preferredCoId] : null;
+          return `
+            <div class="panel" style="margin:0;border-left:5px solid ${e(c.accent || '#0d7b51')};display:flex;flex-direction:column;justify-content:space-between;gap:10px">
+              <div>
+                <div class="row sp" style="align-items:flex-start;gap:8px;margin-bottom:6px">
+                  <div>
+                    <div style="font-size:17px;font-weight:800;color:var(--ink)">${e(c.name)}</div>
+                    <div class="small" style="font-weight:600;color:${e(c.accent || 'var(--deep)')}">${e(c.roleTitle)}</div>
+                  </div>
+                  <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">
+                    <span class="tag" style="font-weight:700">${e(c.badge || c.tierLabel)}</span>
+                    ${c.isBigFour ? '<span class="tag" style="background:#fef3c7;color:#92400e;border-color:#fcd34d;font-weight:700">⭐ Топ-4 афиш</span>' : ''}
+                  </div>
+                </div>
+
+                <div class="small muted" style="margin-bottom:8px">
+                  <b>Роль в эфире:</b> ${e(roleCapabilityText(c))}${prefCo ? ` · <b>Частая пара:</b> ${e(prefCo.name)}` : ''}
+                </div>
+
+                <div style="font-size:13.5px;line-height:1.48;margin-bottom:8px;color:var(--ink)">
+                  ${e(c.styleSummary)}
+                </div>
+
+                ${c.speechRules ? `<div style="font-size:12.5px;line-height:1.45;padding:7px 9px;background:var(--soft);border:1px solid var(--line);border-radius:7px;margin-bottom:8px;color:#334155">
+                  <b>Как работает в трансляции:</b> ${e(c.speechRules)}
+                </div>` : ''}
+
+                ${c.soloSample ? `<div style="font-size:12.5px;line-height:1.45;padding:7px 9px;background:#f8fafc;border-left:3px solid ${e(c.accent || '#0d7b51')};border-radius:4px;margin-bottom:8px;font-style:italic;color:#1e293b">
+                  «${e(c.soloSample)}»
+                </div>` : ''}
+
+                ${(c.signatureTags || []).length ? `<div class="row" style="gap:5px;flex-wrap:wrap">
+                  ${c.signatureTags.map(tg => `<span class="tag" style="background:#fff;font-size:11.5px">#${e(tg)}</span>`).join('')}
+                </div>` : ''}
+              </div>
+
+              <div class="row sp" style="padding-top:8px;border-top:1px solid var(--line);gap:8px;flex-wrap:wrap">
+                <div class="small muted">
+                  ${c.canLead ? `<b>${leadList.length}</b> осн.` : ''}${c.canLead && c.canCo ? ' · ' : ''}${c.canCo ? `<b>${coList.length}</b> 2-й голос` : ''}${doneCount > 0 ? ` · сыграно ${doneCount}` : ''}
+                </div>
+                <button type="button" class="btn alt sm" data-comm-matches="${e(c.id)}">📋 Матчи в сезоне (${leadList.length + coList.length})</button>
+              </div>
+            </div>`;
+        }).join('')}
+      </div>`;
+
+      cardsWrap.querySelectorAll('[data-comm-matches]').forEach(btn => {
+        btn.onclick = () => {
+          const comm = byId[btn.dataset.commMatches];
+          if (comm) openCommMatchesModal(comm);
+        };
+      });
+    };
+
+    ab.querySelectorAll('[data-ctier]').forEach(btn => {
+      btn.onclick = () => {
+        window._commTierFilter = btn.dataset.ctier;
+        ab.querySelectorAll('[data-ctier]').forEach(b => b.classList.toggle('alt', b.dataset.ctier !== window._commTierFilter));
+        renderCommentatorCards();
+      };
+    });
+    const commSearchInp = $('#comm_search_inp');
+    if (commSearchInp) {
+      commSearchInp.oninput = () => {
+        window._commSearch = commSearchInp.value;
+        renderCommentatorCards();
+      };
+    }
+    renderCommentatorCards();
+
+    const cmCompSel = $('#cm_match_comp');
+    const cmMatchSel = $('#cm_match_sel');
+    const cmPreview = $('#cm_match_preview');
+    const renderCmPreview = () => {
+      const fxObj = seasonFixtures.find(x => x.id === cmMatchSel.value);
+      if (!fxObj) { cmPreview.innerHTML = ''; return; }
+      const b = fxObj.commentator;
+      if (!b) {
+        cmPreview.innerHTML = 'Кабина: <i>Автовыбор</i>';
+        return;
+      }
+      cmPreview.innerHTML = `Текущая кабина: <b>${e(b.label)}</b>` +
+        (b.roleTitle ? ` · ${e(b.roleTitle)}` : '') +
+        (b.assignmentReason ? ` <span class="muted">(${e(b.assignmentReason)})</span>` : '');
+    };
+    const fillCmMatches = () => {
+      const compVal = cmCompSel.value;
+      const fxList = seasonFixtures.filter(x => compVal === 'all' || x.comp === compVal).sort((a, b) => {
+        const aDone = a.status === 'done' ? 1 : 0;
+        const bDone = b.status === 'done' ? 1 : 0;
+        if (aDone !== bDone) return aDone - bDone;
+        return String(a.date || '').localeCompare(String(b.date || '')) || (Number(a.round || 0) - Number(b.round || 0));
+      });
+      if (!fxList.length) {
+        cmMatchSel.innerHTML = '<option value="">Нет матчей в выбранном турнире</option>';
+        cmPreview.innerHTML = '';
+        return;
+      }
+      const prev = cmMatchSel.value;
+      cmMatchSel.innerHTML = fxList.map(x => {
+        const sc = x.status === 'done' ? ` (${x.hg}:${x.ag})` : (x.status === 'live' ? ' [LIVE]' : '');
+        const lbl = x.label || compName(x.comp);
+        return `<option value="${e(x.id)}">${e(lbl)} · ${e(x.homeName || teamName(x.home))} — ${e(x.awayName || teamName(x.away))}${sc}</option>`;
+      }).join('');
+      if (prev && fxList.some(x => x.id === prev)) cmMatchSel.value = prev;
+      renderCmPreview();
+    };
+    cmCompSel.onchange = fillCmMatches;
+    cmMatchSel.onchange = renderCmPreview;
+    fillCmMatches();
+    $('#cm_match_edit_btn').onclick = () => {
+      const fxObj = seasonFixtures.find(x => x.id === cmMatchSel.value);
+      if (!fxObj) return toast('Выберите матч');
+      window.openMatchCommentatorModal(fxObj, () => re());
+    };
   }
   else if (AT === 'coaches') {
     const cData = await api('/admin/coaches');

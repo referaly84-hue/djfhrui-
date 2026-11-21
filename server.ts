@@ -15323,6 +15323,7 @@ function buildCommentatorHintsForFixture(f: any, finalMatchFlag?: boolean) {
   };
 }
 function serializeCommentatorsList() {
+  const bigFour = new Set(["naguchev", "trushechkin", "genich", "shnyakin"]);
   return COMMENTATORS.map((c) => ({
     id: c.id,
     name: c.name,
@@ -15331,10 +15332,14 @@ function serializeCommentatorsList() {
     tierLabel: c.tierLabel,
     canLead: c.canLead,
     canCo: c.canCo,
+    isBigFour: bigFour.has(c.id),
     roleTitle: c.roleTitle,
     badge: c.badge,
     accent: c.accent,
     styleSummary: c.styleSummary,
+    speechRules: c.speechRules,
+    signatureTags: Array.isArray(c.signatureTags) ? c.signatureTags : [],
+    soloSample: c.soloSample,
     preferredCoId: c.preferredCoId
   }));
 }
