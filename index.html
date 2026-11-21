@@ -303,12 +303,18 @@ a.fxl{color:inherit}a.fxl:hover{background:var(--soft);text-decoration:none}
 }
 .live-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--red);margin-right:6px;animation:pulse 1.2s infinite}
 @keyframes pulse{50%{opacity:.25}}@media(prefers-reduced-motion:reduce){.live-dot{animation:none}}
-.ev{display:grid;grid-template-columns:54px 28px 1fr;gap:8px;padding:9px 6px;border-bottom:1px solid var(--line);align-items:center}
-.ev .m{font:600 13px Onest,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--muted)}
+.ev{display:grid;grid-template-columns:54px 28px 1fr;gap:8px;padding:9px 6px;border-bottom:1px solid var(--line);align-items:start}
+.ev .m{font:600 13px Onest,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--muted);font-variant-numeric:tabular-nums;padding-top:1px}
 .ev.key{background:#fff8d8;border-left:4px solid var(--yellow);padding-left:8px}
 .ev.goal{background:#e3f4e8;border-left:4px solid var(--green2);padding-left:8px;font-weight:600}
 .ev.red{background:#fde8e6;border-left:4px solid var(--red);padding-left:8px}
-.ev .pl{font-size:12.5px;color:var(--muted)}
+.ev.fact{background:#f0fdf4;border-left:4px solid #10b981;padding-left:8px}
+.ev.commentary{background:#f8fafc;border-left:3px solid #94a3b8;padding-left:8px}
+.ev .pl{font-size:12.5px;color:var(--muted);margin-top:2px}
+.ev-speaker{display:inline-block;font-weight:700;font-size:12px;color:#0f5132;margin-right:6px;letter-spacing:.01em}
+.ev-type-note{display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#059669;margin-bottom:2px}
+.ev-type-note.warn-note{color:#b45309}
+.booth-bar{margin-top:6px;font-size:12px;display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;color:#d6eadc}
 .var-live-banner{display:flex;align-items:center;gap:10px;padding:11px 14px;margin-bottom:10px;border-radius:10px;background:#fef3c7;border:1.5px solid #f59e0b;color:#78350f;font-size:13.5px;font-weight:600}
 .var-live-banner.complex{background:#fee2e2;border-color:#dc2626;color:#7f1d1d}
 .var-live-dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:currentColor;flex-shrink:0;animation:pulse 1s infinite}
@@ -2074,6 +2080,98 @@ window.openMatchRefereeModal = async function(fixtureOrId, onSaved) {
       mEl.remove();
       if (onSaved) onSaved(savedFx);
     }, allFx);
+  });
+};
+
+window.openMatchCommentatorModal = async function(fixtureOrId, onSaved) {
+  if (S.me?.role !== 'admin') {
+    toast('Настройка комментаторов доступна только администратору');
+    return;
+  }
+  const f = typeof fixtureOrId === 'object' && fixtureOrId ? fixtureOrId : M?.fixture;
+  if (!f) return toast('Матч не найден');
+  let list = Array.isArray(M?.commentators) && M.commentators.length ? M.commentators : null;
+  if (!list) {
+    try {
+      const r = await api('/commentators');
+      list = r?.commentators || [];
+    } catch {
+      list = [];
+    }
+  }
+  if (!list.length) return toast('Список комментаторов недоступен');
+  const curComm = f.commentator || {};
+  const leadId = curComm.id || list[0].id;
+  const coId = curComm.coId || 'none';
+  const optHtml = (sel) => list.map(c => `<option value="${e(c.id)}" ${c.id === sel ? 'selected' : ''}>${e(c.name)} — ${e(c.roleTitle)}</option>`).join('');
+  const coOptHtml = (sel) => `<option value="none" ${sel === 'none' ? 'selected' : ''}>Соло-комментарий (без со-комментатора)</option>` + optHtml(sel);
+  const content = `
+    <div style="max-width:560px;width:100%">
+      <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:12px">
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Эфирная кабина</div>
+          <h3 style="margin:2px 0 0">🎙️ Комментаторы трансляции</h3>
+        </div>
+        <span class="tag">${e(f.homeName)} — ${e(f.awayName)}</span>
+      </div>
+      ${f.status !== 'scheduled' ? '<div class="warn" style="margin-bottom:10px;font-size:12.5px">Для уже сгенерированного матча смена комментатора обновит подпись эфира (текст новых матчей пишется под выбранный стиль с начала симуляции).</div>' : ''}
+      <div style="margin-bottom:10px">
+        <label class="small" style="font-weight:700;display:block;margin-bottom:4px">Основной комментатор</label>
+        <select id="comm_lead_sel" style="width:100%">${optHtml(leadId)}</select>
+        <div id="comm_lead_desc" class="small muted" style="margin-top:4px"></div>
+      </div>
+      <div style="margin-bottom:14px">
+        <label class="small" style="font-weight:700;display:block;margin-bottom:4px">Со-комментатор / эксперт (для дуэта)</label>
+        <select id="comm_co_sel" style="width:100%">${coOptHtml(coId)}</select>
+        <div id="comm_co_desc" class="small muted" style="margin-top:4px"></div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap">
+        <button id="comm_auto_btn" type="button" class="btn alt sm">🎲 Автовыбор</button>
+        <div style="display:flex;gap:8px">
+          <button id="comm_cancel_btn" type="button" class="btn alt">Отмена</button>
+          <button id="comm_save_btn" type="button" class="btn">💾 Сохранить</button>
+        </div>
+      </div>
+    </div>`;
+  modal(content, mEl => {
+    const sLead = mEl.querySelector('#comm_lead_sel');
+    const sCo = mEl.querySelector('#comm_co_sel');
+    const dLead = mEl.querySelector('#comm_lead_desc');
+    const dCo = mEl.querySelector('#comm_co_desc');
+    const updDesc = () => {
+      const c1 = list.find(x => x.id === sLead.value);
+      const c2 = list.find(x => x.id === sCo.value);
+      dLead.textContent = c1 ? c1.styleSummary : '';
+      dCo.textContent = sCo.value === 'none'
+        ? 'Эфир ведёт один комментатор в авторской манере.'
+        : (c2 && c2.id === sLead.value ? 'Выберите другого специалиста для дуэта (или соло).' : (c2 ? c2.styleSummary : ''));
+    };
+    sLead.onchange = updDesc;
+    sCo.onchange = updDesc;
+    updDesc();
+    mEl.querySelector('#comm_cancel_btn').onclick = () => mEl.remove();
+    mEl.querySelector('#comm_auto_btn').onclick = async () => {
+      try {
+        const res = await api('/admin/fixture/commentator', { id: f.id, auto: true });
+        if (res?.fixture?.commentator && M?.fixture) M.fixture.commentator = res.fixture.commentator;
+        toast('Назначен автоматический подбор комментатора');
+        mEl.remove();
+        if (onSaved) onSaved(res?.fixture);
+      } catch (err) { toast('Ошибка: ' + (err.message || err)); }
+    };
+    mEl.querySelector('#comm_save_btn').onclick = async () => {
+      try {
+        const res = await api('/admin/fixture/commentator', {
+          id: f.id,
+          commentatorId: sLead.value,
+          coCommentatorId: sCo.value
+        });
+        if (res?.fixture?.commentator && M?.fixture) M.fixture.commentator = res.fixture.commentator;
+        toast('Комментаторы матча обновлены');
+        mEl.remove();
+        if (onSaved) onSaved(res?.fixture);
+      } catch (err) { toast('Ошибка: ' + (err.message || err)); }
+    };
   });
 };
 
@@ -3884,7 +3982,7 @@ async function pgFixtures(app, comp = 'rpl', round) {
 }
 
 /* ───── матч ───── */
-const EVI = { goal: '⚽', own_goal: '⚽', yellow: '🟨', red: '🟥', injury: '🚑', penalty: '🎯', pen_shootout_start: '🥅', pen_shootout_goal: '✅', pen_shootout_save: '🧤', pen_shootout_miss: '❌', var: '📺', ref_error: '🧑‍⚖️', halftime: '⏸', fulltime: '🏁', highlight: '🔥', incident: '❗', save: '🧤', post: '🥅', sub: '🔁', corner: '🚩', foul: '✋', shot: '💥', miss: '↗', tackle: '🛡', kickoff: '▶', offside: '🚫', freekick: '🎯', possession: '·', pass: '·', dribble: '·', duel: '·', commentator_intro: '🎙', tactical_note: '📋', stat_display: '📊', crowd: '📣', lineup: '📃', walkout: '🚶', anthem: '🎶', coin_toss: '🪙', photo: '📸', warmup: '🏃', kickoff_buildup: '⏳', kit_issue: '👕', verbal_warning: '☝️', cooling_break: '💧' };
+const EVI = { goal: '⚽', own_goal: '⚽', yellow: '🟨', red: '🟥', injury: '🚑', penalty: '🎯', pen_shootout_start: '🥅', pen_shootout_goal: '✅', pen_shootout_save: '🧤', pen_shootout_miss: '❌', var: '📺', ref_error: '🧑‍⚖️', halftime: '⏸', fulltime: '🏁', highlight: '🔥', incident: '❗', save: '🧤', post: '🥅', sub: '🔁', corner: '🚩', foul: '✋', shot: '💥', miss: '↗', tackle: '🛡', kickoff: '▶', offside: '🚫', freekick: '🎯', possession: '·', pass: '·', dribble: '·', duel: '·', commentator_intro: '🎙', tactical_note: '📋', stat_display: '📊', fact: '📖', crowd: '📣', lineup: '📃', walkout: '🚶', anthem: '🎶', coin_toss: '🪙', photo: '📸', warmup: '🏃', kickoff_buildup: '⏳', kit_issue: '👕', verbal_warning: '☝️', cooling_break: '💧' };
 const fmtEvT = x => { const t = x.min * 60 + (x.sec || 0), a = Math.abs(t); return (t < 0 ? '−' : '') + Math.floor(a / 60) + ':' + String(a % 60).padStart(2, '0'); };
 let M = null, evs = [], mtab = 'live', mStatsView = 'table', mStatsSelPid = null;
 
@@ -3952,6 +4050,7 @@ function drawMatch(app, id) {
     ${S.me?.role === 'admin' ? `<button id="btn_edit_match_schedule" class="btn alt sm" type="button" style="padding:2px 8px;font-size:11px;font-weight:700;margin-left:6px;cursor:pointer">✏️ Изменить дату и время</button>` : ''}
   </div>
   ${(f.refereeName || S.me?.role === 'admin') ? `<div class="meta" style="margin-top:4px;font-size:12px;display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap"><span>${f.refereeName ? `Судья: <b>${e(f.refereeName)}</b>${f.assistants?.length ? ` · Помощники: ${f.assistants.map(e).join(', ')}` : ''}${f.reserveReferee ? ` · Резервный: ${e(f.reserveReferee)}` : ''}${f.varReferee ? ` · ВАР: ${e(f.varReferee)}` : ''}${f.avarReferee ? ` · АВАР: ${e(f.avarReferee)}` : ''}` : 'Судейская бригада не назначена'}</span>${S.me?.role === 'admin' ? `<button id="btn_edit_match_referees" class="btn alt sm" type="button" style="padding:2px 8px;font-size:11px;font-weight:700;cursor:pointer">⚖️ ${f.refereeName ? 'Изменить бригаду арбитров' : 'Назначить бригаду арбитров'}</button>` : ''}</div>` : ''}
+  ${(f.commentator?.name || S.me?.role === 'admin') ? `<div class="booth-bar"><span>🎙️ ${f.commentator?.duo ? 'Дуэт эфира' : 'В эфире'}: <b style="color:#fff">${e(f.commentator?.label || 'Автовыбор')}</b>${f.commentator?.roleTitle ? ` · ${e(f.commentator.roleTitle)}` : ''}</span>${S.me?.role === 'admin' ? `<button id="btn_edit_match_commentator" class="btn alt sm" type="button" style="padding:2px 8px;font-size:11px;font-weight:700;cursor:pointer">🎙️ Сменить комментатора</button>` : ''}</div>` : ''}
   <div class="line">
     <div class="tm-box r">
       <div class="tm r">${e(f.homeName)}</div>
@@ -4046,6 +4145,12 @@ ${motm && motmPlayer ? `
       window.openMatchRefereeModal(f, () => drawMatch(app, id));
     };
   }
+  const bEdComm = app.querySelector('#btn_edit_match_commentator');
+  if (bEdComm) {
+    bEdComm.onclick = () => {
+      window.openMatchCommentatorModal(f, () => drawMatch(app, id));
+    };
+  }
   paintMatch();
 }
 
@@ -4067,7 +4172,7 @@ function paintMatch() {
       if (ev.type === 'var' || ev.varPause) {
         isOngoingVar = true;
         if (idx < evs.length - 1 && evs[idx + 1]?.type === 'var') isComplexVar = true;
-      } else if (!['commentator_intro', 'crowd', 'tactical_note', 'verbal_warning', 'highlight'].includes(ev.type)) {
+      } else if (!['commentator_intro', 'crowd', 'tactical_note', 'verbal_warning', 'highlight', 'fact'].includes(ev.type)) {
         break;
       }
     }
@@ -4091,7 +4196,8 @@ function paintMatch() {
       : '';
     b.innerHTML = varBanner + '<div class="panel">' + [...evs].reverse().map(x => {
       const isGoal = x.type === 'goal' || x.type === 'own_goal' || x.type === 'pen_shootout_goal';
-      const cls = isGoal ? 'goal' : (x.type === 'red' || x.type === 'pen_shootout_miss') ? 'red' : ['yellow', 'injury', 'penalty', 'pen_shootout_start', 'pen_shootout_save', 'var', 'ref_error', 'highlight', 'incident', 'halftime', 'fulltime'].includes(x.type) || x.disallowedGoal || x.varPause ? 'key' : '';
+      const isFact = x.type === 'fact';
+      const cls = isGoal ? 'goal' : (x.type === 'red' || x.type === 'pen_shootout_miss') ? 'red' : isFact ? 'fact' : ['yellow', 'injury', 'penalty', 'pen_shootout_start', 'pen_shootout_save', 'var', 'ref_error', 'highlight', 'incident', 'halftime', 'fulltime'].includes(x.type) || x.disallowedGoal || x.varPause ? 'key' : ['commentator_intro', 'tactical_note', 'stat_display'].includes(x.type) ? 'commentary' : '';
       const tLogo = x.team === 'home' ? (f.homeLogo || teamLogo(f.home)) : (x.team === 'away' ? (f.awayLogo || teamLogo(f.away)) : null);
       const scoreBadge = (x.type === 'goal' || x.type === 'own_goal')
         ? `<div class="pl"><b>${x.type === 'own_goal' ? '⚽ АВТОГОЛ' : '⚽ ГОЛ'} · ${x.score[0]}:${x.score[1]}</b></div>`
@@ -4102,11 +4208,17 @@ function paintMatch() {
             : (x.type === 'halftime' || x.type === 'fulltime') && Array.isArray(x.score)
               ? `<div class="pl"><b>${x.type === 'halftime' ? '⏸ Перерыв' : '🏁 Итог'} · ${x.score[0]}:${x.score[1]}</b></div>`
               : '';
+      const typeNote = isFact
+        ? `<span class="ev-type-note">📖 Факт эфира${x.speaker ? ' · ' + e(x.speaker) : ''}</span>`
+        : x.type === 'verbal_warning'
+          ? '<span class="ev-type-note warn-note">☝️ Устное внушение арбитра</span>'
+          : '';
+      const speakerHtml = (!isFact && x.speaker) ? `<span class="ev-speaker">🎙️ ${e(x.speaker)}:</span>` : '';
       const timeLabel = x.penKickLabel ? e(x.penKickLabel) : (x.min < 0 ? 'до матча' : fmtEvT(x));
       return `<div class="ev ${cls}">
         <div class="m">${timeLabel}</div>
         <div>${tLogo ? `<img class="t-logo" src="${tLogo}" alt=""/>` : (EVI[x.type] || '·')}</div>
-        <div>${e(x.text)}${cls && x.players?.length ? `<div class="pl">${e(x.players.join(', '))}</div>` : ''}${scoreBadge}</div>
+        <div>${typeNote}${speakerHtml}${e(x.text)}${cls && !isFact && x.players?.length ? `<div class="pl">${e(x.players.join(', '))}</div>` : ''}${scoreBadge}</div>
       </div>`;
     }).join('') + '</div>';
   } else if (mtab === 'stats') {
@@ -4817,6 +4929,18 @@ function paintMatch() {
       <div id="mtab_ref_body" class="muted small">Загрузка списка арбитров…</div>
     </div>
 
+    <div class="panel" style="border-left:4px solid #7c3aed">
+      <div class="row sp" style="margin-bottom:8px">
+        <h3 style="margin:0;font-size:16px">🎙️ Комментаторы трансляции</h3>
+        <span class="tag" style="background:#ede9fe;color:#5b21b6;border-color:#c4b5fd;font-weight:700">Эфир</span>
+      </div>
+      <div class="small" style="margin-bottom:10px">
+        Сейчас назначено: <b>${e(f.commentator?.label || 'Автовыбор')}</b>
+        ${f.commentator?.styleSummary ? `<div class="muted" style="margin-top:3px">${e(f.commentator.styleSummary)}</div>` : ''}
+      </div>
+      <button class="btn alt sm" id="btn_mtab_comm" type="button" style="font-weight:700">🎙️ Выбрать комментатора / дуэт</button>
+    </div>
+
     <div class="panel">
       <h3>Вопрос по матчу</h3>
       <div class="row"><input id="q" placeholder="Почему проиграла эта команда? Как сыграл такой-то игрок?" style="flex:1;min-width:240px"><button class="btn" id="ask" ${f.status !== 'done' ? 'disabled' : ''}>Спросить</button></div>
@@ -4898,6 +5022,13 @@ function paintMatch() {
       }).catch(err => {
         refBodyEl.innerHTML = `<div class="warn">Не удалось загрузить судейский корпус: ${e(err.message || err)}</div>`;
       });
+    }
+
+    const btnMtabComm = $('#btn_mtab_comm');
+    if (btnMtabComm) {
+      btnMtabComm.onclick = () => {
+        window.openMatchCommentatorModal(f, () => drawMatch(app, id));
+      };
     }
 
     $('#ask').onclick = async () => {
