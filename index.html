@@ -2103,17 +2103,36 @@ window.openMatchCommentatorModal = async function(fixtureOrId, onSaved) {
   const curComm = f.commentator || {};
   const leadId = curComm.id || list[0].id;
   const coId = curComm.coId || 'none';
-  const optHtml = (sel) => list.map(c => `<option value="${e(c.id)}" ${c.id === sel ? 'selected' : ''}>${e(c.name)} — ${e(c.roleTitle)}</option>`).join('');
-  const coOptHtml = (sel) => `<option value="none" ${sel === 'none' ? 'selected' : ''}>Соло-комментарий (без со-комментатора)</option>` + optHtml(sel);
+  const renderOpt = (c, sel) => `<option value="${e(c.id)}" ${c.id === sel ? 'selected' : ''}>${e(c.name)} — ${e(c.roleTitle)}</option>`;
+  const leadGroups = [
+    { label: 'Главные вывески (верхний ярус)', items: list.filter(c => c.tier === 'top' && c.canLead !== false) },
+    { label: 'Вся сетка тура', items: list.filter(c => c.tier === 'grid' && c.canLead !== false) },
+    { label: 'Середина и низ таблицы', items: list.filter(c => c.tier === 'lower' && c.canLead !== false) },
+    { label: 'Северный Кавказ (Ахмат, Динамо Мх)', items: list.filter(c => c.tier === 'caucasus' && c.canLead !== false) },
+    { label: 'Прочие комментаторы', items: list.filter(c => !['top', 'grid', 'lower', 'caucasus'].includes(c.tier) && (c.canLead !== false || c.id === leadId)) }
+  ].filter(g => g.items.length);
+  const optHtml = (sel) => leadGroups.map(g => `<optgroup label="${e(g.label)}">${g.items.map(c => renderOpt(c, sel)).join('')}</optgroup>`).join('');
+  const secondCore = list.filter(c => c.tier === 'second');
+  const dualVoices = list.filter(c => c.tier !== 'second' && c.tier !== 'caucasus' && c.canCo);
+  const caucasusVoices = list.filter(c => c.tier === 'caucasus');
+  const otherVoices = list.filter(c => c.tier !== 'second' && c.tier !== 'caucasus' && !c.canCo);
+  const coGroups = [
+    { label: 'Вторые голоса (напарники в кабине)', items: [...secondCore, ...dualVoices] },
+    { label: 'Северный Кавказ (Ахмат, Динамо Мх)', items: caucasusVoices },
+    { label: 'Другие комментаторы (для дуэта)', items: otherVoices }
+  ].filter(g => g.items.length);
+  const coOptHtml = (sel) => `<option value="none" ${sel === 'none' ? 'selected' : ''}>Соло-эфир (один комментатор в кабине)</option>` +
+    coGroups.map(g => `<optgroup label="${e(g.label)}">${g.items.map(c => renderOpt(c, sel)).join('')}</optgroup>`).join('');
   const content = `
-    <div style="max-width:560px;width:100%">
-      <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:12px">
+    <div style="max-width:580px;width:100%">
+      <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:12px;gap:8px;flex-wrap:wrap">
         <div>
           <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Эфирная кабина</div>
           <h3 style="margin:2px 0 0">🎙️ Комментаторы трансляции</h3>
         </div>
         <span class="tag">${e(f.homeName)} — ${e(f.awayName)}</span>
       </div>
+      ${curComm.assignmentReason ? `<div class="small muted" style="margin-bottom:10px">Текущий подбор: <b>${e(curComm.assignmentReason)}</b></div>` : ''}
       ${f.status !== 'scheduled' ? '<div class="warn" style="margin-bottom:10px;font-size:12.5px">Для уже сгенерированного матча смена комментатора обновит подпись эфира (текст новых матчей пишется под выбранный стиль с начала симуляции).</div>' : ''}
       <div style="margin-bottom:10px">
         <label class="small" style="font-weight:700;display:block;margin-bottom:4px">Основной комментатор</label>
@@ -2121,7 +2140,7 @@ window.openMatchCommentatorModal = async function(fixtureOrId, onSaved) {
         <div id="comm_lead_desc" class="small muted" style="margin-top:4px"></div>
       </div>
       <div style="margin-bottom:14px">
-        <label class="small" style="font-weight:700;display:block;margin-bottom:4px">Со-комментатор / эксперт (для дуэта)</label>
+        <label class="small" style="font-weight:700;display:block;margin-bottom:4px">Второй голос в кабине (полноценный напарник)</label>
         <select id="comm_co_sel" style="width:100%">${coOptHtml(coId)}</select>
         <div id="comm_co_desc" class="small muted" style="margin-top:4px"></div>
       </div>
@@ -2141,10 +2160,10 @@ window.openMatchCommentatorModal = async function(fixtureOrId, onSaved) {
     const updDesc = () => {
       const c1 = list.find(x => x.id === sLead.value);
       const c2 = list.find(x => x.id === sCo.value);
-      dLead.textContent = c1 ? c1.styleSummary : '';
+      dLead.textContent = c1 ? `${c1.badge ? '[' + c1.badge + '] ' : ''}${c1.styleSummary}` : '';
       dCo.textContent = sCo.value === 'none'
         ? 'Эфир ведёт один комментатор в авторской манере.'
-        : (c2 && c2.id === sLead.value ? 'Выберите другого специалиста для дуэта (или соло).' : (c2 ? c2.styleSummary : ''));
+        : (c2 && c2.id === sLead.value ? 'Выберите другого напарника для дуэта (или соло).' : (c2 ? `${c2.badge ? '[' + c2.badge + '] ' : ''}${c2.styleSummary}` : ''));
     };
     sLead.onchange = updDesc;
     sCo.onchange = updDesc;
@@ -4050,7 +4069,7 @@ function drawMatch(app, id) {
     ${S.me?.role === 'admin' ? `<button id="btn_edit_match_schedule" class="btn alt sm" type="button" style="padding:2px 8px;font-size:11px;font-weight:700;margin-left:6px;cursor:pointer">✏️ Изменить дату и время</button>` : ''}
   </div>
   ${(f.refereeName || S.me?.role === 'admin') ? `<div class="meta" style="margin-top:4px;font-size:12px;display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap"><span>${f.refereeName ? `Судья: <b>${e(f.refereeName)}</b>${f.assistants?.length ? ` · Помощники: ${f.assistants.map(e).join(', ')}` : ''}${f.reserveReferee ? ` · Резервный: ${e(f.reserveReferee)}` : ''}${f.varReferee ? ` · ВАР: ${e(f.varReferee)}` : ''}${f.avarReferee ? ` · АВАР: ${e(f.avarReferee)}` : ''}` : 'Судейская бригада не назначена'}</span>${S.me?.role === 'admin' ? `<button id="btn_edit_match_referees" class="btn alt sm" type="button" style="padding:2px 8px;font-size:11px;font-weight:700;cursor:pointer">⚖️ ${f.refereeName ? 'Изменить бригаду арбитров' : 'Назначить бригаду арбитров'}</button>` : ''}</div>` : ''}
-  ${(f.commentator?.name || S.me?.role === 'admin') ? `<div class="booth-bar"><span>🎙️ ${f.commentator?.duo ? 'Дуэт эфира' : 'В эфире'}: <b style="color:#fff">${e(f.commentator?.label || 'Автовыбор')}</b>${f.commentator?.roleTitle ? ` · ${e(f.commentator.roleTitle)}` : ''}</span>${S.me?.role === 'admin' ? `<button id="btn_edit_match_commentator" class="btn alt sm" type="button" style="padding:2px 8px;font-size:11px;font-weight:700;cursor:pointer">🎙️ Сменить комментатора</button>` : ''}</div>` : ''}
+  ${(f.commentator?.name || S.me?.role === 'admin') ? `<div class="booth-bar"><span title="${e(f.commentator?.assignmentReason || '')}">🎙️ ${f.commentator?.duo ? 'В кабине (дуэт)' : 'В эфире'}: <b style="color:#fff">${e(f.commentator?.label || 'Автовыбор')}</b>${f.commentator?.roleTitle ? ` · ${e(f.commentator.roleTitle)}` : ''}${f.commentator?.badge ? ` <span style="opacity:.82;font-size:11px">· ${e(f.commentator.badge)}</span>` : ''}</span>${S.me?.role === 'admin' ? `<button id="btn_edit_match_commentator" class="btn alt sm" type="button" style="padding:2px 8px;font-size:11px;font-weight:700;cursor:pointer">🎙️ Сменить комментатора</button>` : ''}</div>` : ''}
   <div class="line">
     <div class="tm-box r">
       <div class="tm r">${e(f.homeName)}</div>
@@ -4935,7 +4954,7 @@ function paintMatch() {
         <span class="tag" style="background:#ede9fe;color:#5b21b6;border-color:#c4b5fd;font-weight:700">Эфир</span>
       </div>
       <div class="small" style="margin-bottom:10px">
-        Сейчас назначено: <b>${e(f.commentator?.label || 'Автовыбор')}</b>
+        Сейчас назначено: <b>${e(f.commentator?.label || 'Автовыбор')}</b>${f.commentator?.assignmentReason ? ` <span class="muted">(${e(f.commentator.assignmentReason)})</span>` : ''}
         ${f.commentator?.styleSummary ? `<div class="muted" style="margin-top:3px">${e(f.commentator.styleSummary)}</div>` : ''}
       </div>
       <button class="btn alt sm" id="btn_mtab_comm" type="button" style="font-weight:700">🎙️ Выбрать комментатора / дуэт</button>

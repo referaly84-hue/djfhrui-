@@ -10396,10 +10396,14 @@ async function buildCtx(f) {
   const isLeagueMatch = compOf(comp)?.type === "league";
   const formatStandingRow = (r: any, leagueLabel?: string) =>
     `${r.pos}-\u0435 \u043C\u0435\u0441\u0442\u043E${leagueLabel ? ` (${leagueLabel})` : ""} (${r.pts} \u043E\u0447\u043A., ${r.p} \u0438\u0433\u0440, ${r.w}\u0412 ${r.d}\u041D ${r.l}\u041F, \u043C\u044F\u0447\u0438 ${r.gf}-${r.ga}, \u0440\u0430\u0437\u043D\u0438\u0446\u0430 ${r.gd >= 0 ? "+" + r.gd : r.gd}, \u0444\u043E\u0440\u043C\u0430: ${r.form || "\u2014"}, \u0437\u043E\u043D\u0430: ${r.zoneLabel || "\u0441\u0435\u0440\u0435\u0434\u0438\u043D\u0430 \u0442\u0430\u0431\u043B\u0438\u0446\u044B"})`;
+  let ctxHomePos: number | null = null;
+  let ctxAwayPos: number | null = null;
   if (isLeagueMatch) {
     const rows = table(comp, f.date);
     const rH = rows.find((x) => x.id === f.home);
     const rA = rows.find((x) => x.id === f.away);
+    if (rH && rH.p >= 2) ctxHomePos = rH.pos;
+    if (rA && rA.p >= 2) ctxAwayPos = rA.pos;
     ctx.tableStandings = {
       home: rH ? formatStandingRow(rH) : `${lpH.name} \u2014 \u043D\u0430\u0447\u0430\u043B\u043E \u0442\u0443\u0440\u043D\u0438\u0440\u0430`,
       away: rA ? formatStandingRow(rA) : `${lpA.name} \u2014 \u043D\u0430\u0447\u0430\u043B\u043E \u0442\u0443\u0440\u043D\u0438\u0440\u0430`
@@ -10409,6 +10413,8 @@ async function buildCtx(f) {
     const rowsA = lpA.compId ? table(lpA.compId, f.date) : [];
     const rH = rowsH.find((x) => x.id === f.home);
     const rA = rowsA.find((x) => x.id === f.away);
+    if (rH && rH.p >= 2) ctxHomePos = rH.pos;
+    if (rA && rA.p >= 2) ctxAwayPos = rA.pos;
     ctx.tableStandings = {
       home: rH ? formatStandingRow(rH, lpH.name) : `${lpH.name} (${lpH.level}) \u2014 \u043D\u0430\u0447\u0430\u043B\u043E \u0441\u0435\u0437\u043E\u043D\u0430`,
       away: rA ? formatStandingRow(rA, lpA.name) : `${lpA.name} (${lpA.level}) \u2014 \u043D\u0430\u0447\u0430\u043B\u043E \u0441\u0435\u0437\u043E\u043D\u0430`
@@ -10447,7 +10453,14 @@ async function buildCtx(f) {
   const booth = resolveMatchCommentatorBooth(f, {
     derby: isDerbyBool,
     rivalry: isRivalryBool,
-    finalMatch: isFinal
+    finalMatch: isFinal,
+    homeName: tn(f.home),
+    awayName: tn(f.away),
+    homePos: ctxHomePos,
+    awayPos: ctxAwayPos,
+    homePower: getTeamPowerScore(f.home),
+    awayPower: getTeamPowerScore(f.away),
+    comp: f.comp
   });
   ctx.isDerby = isDerbyBool;
   ctx.isRivalry = isRivalryBool;
@@ -15256,6 +15269,75 @@ var pubPlayer = (p, refComp: any = null) => {
     sellOnClubName: p.sellOnClubName || null
   };
 };
+let _commStandingsMemo: { key: string; at: number; posByComp: Record<string, Record<string, number>>; powByTeam: Record<string, number> } | null = null;
+function getCachedCommentatorLookups() {
+  const season = S();
+  const doneCount = (db?.fixtures || []).filter((x: any) => x.status === "done").length;
+  const key = `${season}:${doneCount}:${(db?.teams || []).length}`;
+  const now = Date.now();
+  if (_commStandingsMemo && _commStandingsMemo.key === key && now - _commStandingsMemo.at < 5000) {
+    return _commStandingsMemo;
+  }
+  const posByComp: Record<string, Record<string, number>> = {};
+  const leagueComps = new Set<string>();
+  for (const c of (db?.comps || [])) {
+    if (c?.type === "league" && c.id) leagueComps.add(c.id);
+  }
+  for (const cid of leagueComps) {
+    const map: Record<string, number> = {};
+    try {
+      const rows = table(cid);
+      for (const r of rows) {
+        if (r?.id && r.p >= 2) map[r.id] = r.pos;
+      }
+    } catch {}
+    posByComp[cid] = map;
+  }
+  const powByTeam: Record<string, number> = {};
+  for (const t of (db?.teams || [])) {
+    if (t?.id) powByTeam[t.id] = getTeamPowerScore(t.id);
+  }
+  _commStandingsMemo = { key, at: now, posByComp, powByTeam };
+  return _commStandingsMemo;
+}
+function buildCommentatorHintsForFixture(f: any, finalMatchFlag?: boolean) {
+  const { posByComp, powByTeam } = getCachedCommentatorLookups();
+  const comp = f?.comp || "rpl";
+  const hComp = compOf(comp)?.type === "league" ? comp : (team(f?.home)?.comp || comp);
+  const aComp = compOf(comp)?.type === "league" ? comp : (team(f?.away)?.comp || comp);
+  const homePos = posByComp[hComp]?.[f?.home] ?? null;
+  const awayPos = posByComp[aComp]?.[f?.away] ?? null;
+  const derby = !!db.derbies.find((d) => !d.principled && (d.a === f.home && d.b === f.away || d.a === f.away && d.b === f.home));
+  const rivalry = !!db.derbies.find((d) => d.principled && (d.a === f.home && d.b === f.away || d.a === f.away && d.b === f.home));
+  return {
+    derby,
+    rivalry,
+    finalMatch: finalMatchFlag ?? isFinalMatch(f),
+    homeName: tn(f?.home),
+    awayName: tn(f?.away),
+    homePos,
+    awayPos,
+    homePower: powByTeam[f?.home] ?? getTeamPowerScore(f?.home),
+    awayPower: powByTeam[f?.away] ?? getTeamPowerScore(f?.away),
+    comp
+  };
+}
+function serializeCommentatorsList() {
+  return COMMENTATORS.map((c) => ({
+    id: c.id,
+    name: c.name,
+    shortName: c.shortName,
+    tier: c.tier,
+    tierLabel: c.tierLabel,
+    canLead: c.canLead,
+    canCo: c.canCo,
+    roleTitle: c.roleTitle,
+    badge: c.badge,
+    accent: c.accent,
+    styleSummary: c.styleSummary,
+    preferredCoId: c.preferredCoId
+  }));
+}
 var pubFx = (f) => {
   const isFinal = isFinalMatch(f);
   let stadium = f.stadium;
@@ -15338,11 +15420,7 @@ var pubFx = (f) => {
     weatherShort: f.weatherShort || null,
     weatherDetails: f.weatherDetails || null,
     commentator: pubCommentatorBooth(
-      resolveMatchCommentatorBooth(f, {
-        derby: !!db.derbies.find((d) => !d.principled && (d.a === f.home && d.b === f.away || d.a === f.away && d.b === f.home)),
-        rivalry: !!db.derbies.find((d) => d.principled && (d.a === f.home && d.b === f.away || d.a === f.away && d.b === f.home)),
-        finalMatch: isFinal
-      })
+      resolveMatchCommentatorBooth(f, buildCommentatorHintsForFixture(f, isFinal))
     )
   };
 };
@@ -15720,16 +15798,7 @@ app.get("/api/match/:id", async (req, res) => {
       away: { coach: coachAway, staff: getStaffForTeam(f.away) }
     },
     h2h: getHeadToHead(f.home, f.away, f.id),
-    commentators: COMMENTATORS.map((c) => ({
-      id: c.id,
-      name: c.name,
-      shortName: c.shortName,
-      roleTitle: c.roleTitle,
-      badge: c.badge,
-      accent: c.accent,
-      styleSummary: c.styleSummary,
-      preferredCoId: c.preferredCoId
-    }))
+    commentators: serializeCommentatorsList()
   };
   if (m && (f.status === "live" || f.status === "done")) {
     out.events = f.status === "live" ? m.events.slice(0, f.pos) : m.events;
@@ -21060,16 +21129,7 @@ app.post("/api/admin/fixture/referee", admin, async (req, res) => {
 });
 app.get("/api/commentators", (_req, res) => {
   res.json({
-    commentators: COMMENTATORS.map((c) => ({
-      id: c.id,
-      name: c.name,
-      shortName: c.shortName,
-      roleTitle: c.roleTitle,
-      badge: c.badge,
-      accent: c.accent,
-      styleSummary: c.styleSummary,
-      preferredCoId: c.preferredCoId
-    }))
+    commentators: serializeCommentatorsList()
   });
 });
 app.post("/api/admin/fixture/commentator", admin, (req, res) => {
